@@ -1,0 +1,13 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# App bundle output
+dist/
+
+# macOS
+.DS_Store
+
+# Xcode (if ever opened there)
+*.xcuserstate
+xcuserdata/

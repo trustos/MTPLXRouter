@@ -1,0 +1,182 @@
+import SwiftUI
+import AppKit
+
+final class SettingsModel: ObservableObject {
+    @Published var cfg: AppConfig
+    @Published var launchAtLogin: Bool
+    init() {
+        cfg = ConfigStore.shared.config
+        launchAtLogin = LoginItem.isEnabled
+    }
+    func reload() {
+        cfg = ConfigStore.shared.config
+        launchAtLogin = LoginItem.isEnabled
+    }
+    func save() {
+        ConfigStore.shared.save(cfg)
+        if cfg.startup.startRouterOnLaunch || RouterServer.shared.isRunning {
+            try? RouterServer.shared.start()   // re-bind host/port
+        }
+    }
+}
+
+final class SettingsWindowController: NSWindowController {
+    convenience init() {
+        let model = SettingsModel()
+        let host = NSHostingController(rootView: SettingsView(model: model))
+        let window = NSWindow(contentViewController: host)
+        window.title = "MTPLX Router — Settings"
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.setContentSize(NSSize(width: 580, height: 500))
+        self.init(window: window)
+    }
+}
+
+private func fileExists(_ p: String) -> Bool { FileManager.default.fileExists(atPath: p) }
+private func isExec(_ p: String) -> Bool { FileManager.default.isExecutableFile(atPath: p) }
+
+private struct StatusDot: View {
+    let ok: Bool
+    let okText: String
+    let badText: String
+    var body: some View {
+        Label(ok ? okText : badText, systemImage: ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+            .foregroundStyle(ok ? .green : .red)
+            .font(.caption)
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var model: SettingsModel
+    @State private var alertText: String?
+
+    private var issues: [Issue] { Diagnostics.configIssues(model.cfg) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !issues.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(issues) { i in
+                        Label("\(i.title) — \(i.detail)", systemImage: i.severity == .error ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(i.severity == .error ? .red : .orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color.yellow.opacity(0.12))
+            }
+
+            TabView {
+                routerTab.tabItem { Text("Router") }
+                modelsTab.tabItem { Text("Models") }
+                startupTab.tabItem { Text("Startup") }
+            }
+
+            Divider()
+            HStack {
+                Button("Write OpenCode config") { writeOpenCode() }
+                Spacer()
+                Button("Revert") { model.reload() }
+                Button("Save") { model.save() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(width: 580, height: 500)
+        .alert("OpenCode", isPresented: Binding(get: { alertText != nil }, set: { if !$0 { alertText = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(alertText ?? "") }
+    }
+
+    private func writeOpenCode() {
+        ConfigStore.shared.save(model.cfg)   // write current edits first
+        do {
+            let r = try OpenCodeConfigWriter.write()
+            var m = (r.createdNew ? "Created " : "Updated ") + r.path
+            if let b = r.backupPath { m += "\nBackup: \(b)" }
+            m += r.carriedSettings ? "\nCarried over existing per-model settings." : "\nNo prior per-model settings to carry."
+            for w in r.warnings { m += "\n⚠︎ \(w)" }
+            alertText = m
+        } catch { alertText = "Failed: \(error)" }
+    }
+
+    private var routerTab: some View {
+        Form {
+            Section("Router endpoint") {
+                TextField("Host", text: $model.cfg.router.host)
+                TextField("Port", value: $model.cfg.router.port, format: .number)
+                SecureField("API key (blank = none)", text: $model.cfg.router.apiKey)
+            }
+            Section("Backend (mtplx)") {
+                TextField("mtplx binary", text: $model.cfg.mtplxBinary)
+                StatusDot(ok: isExec(model.cfg.mtplxBinary),
+                          okText: "mtplx found",
+                          badText: fileExists(model.cfg.mtplxBinary) ? "not executable" : "not found — install MTPLX or fix the path")
+                TextField("Backend port", value: $model.cfg.backendPort, format: .number)
+                TextField("Health timeout (s)", value: $model.cfg.healthTimeoutSeconds, format: .number)
+                TextField("Idle evict (min, 0 = never)", value: $model.cfg.idleEvictMinutes, format: .number)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var modelsTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach($model.cfg.models) { $m in
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Toggle("", isOn: $m.enabled).labelsHidden()
+                                TextField("Display name", text: $m.displayName)
+                            }
+                            HStack {
+                                TextField("model id", text: $m.id)
+                                TextField("alias", text: $m.alias).frame(width: 110)
+                            }
+                            TextField("path", text: $m.path)
+                                .font(.system(size: 11, design: .monospaced))
+                            StatusDot(ok: fileExists(m.path), okText: "folder exists", badText: "folder not found")
+                        }
+                        .padding(4)
+                    }
+                }
+                HStack {
+                    Button("Add model") {
+                        model.cfg.models.append(ModelEntry(id: "new-model", alias: "", displayName: "New model",
+                                                           path: expandTilde("~/.mtplx/models/")))
+                    }
+                    if model.cfg.models.count > 0 {
+                        Button("Remove last", role: .destructive) { _ = model.cfg.models.popLast() }
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .padding(12)
+        }
+    }
+
+    private var startupTab: some View {
+        Form {
+            Section("Startup") {
+                Toggle("Launch at login", isOn: Binding(
+                    get: { model.launchAtLogin },
+                    set: { v in
+                        if LoginItem.set(v) { model.launchAtLogin = v; model.cfg.startup.launchAtLogin = v }
+                        else { alertText = "Couldn’t change launch-at-login. Move “MTPLX Router.app” to /Applications and try again." }
+                    }
+                ))
+                Toggle("Start router when app launches", isOn: $model.cfg.startup.startRouterOnLaunch)
+                Picker("Preload on launch", selection: Binding(
+                    get: { model.cfg.startup.preloadModelId ?? "" },
+                    set: { model.cfg.startup.preloadModelId = $0.isEmpty ? nil : $0 }
+                )) {
+                    Text("None (lazy load)").tag("")
+                    ForEach(model.cfg.models) { m in Text(m.displayName).tag(m.id) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
