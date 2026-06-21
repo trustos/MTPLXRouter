@@ -60,6 +60,7 @@ struct StartupConfig: Codable {
 struct AppConfig: Codable {
     var router: RouterConfig = RouterConfig()
     var backendPort: Int = 8011                 // single reused backend port (strict swap)
+    var compressionProxyURL: String = ""        // optional Headroom proxy (router → here → mtplx); "" = direct
     var mtplxBinary: String = expandTilde("~/.mtplx/bin/mtplx")
     var modelsDir: String = expandTilde("~/.mtplx/models")
     var startup: StartupConfig = StartupConfig()
@@ -69,12 +70,13 @@ struct AppConfig: Codable {
 
     init() {}
     enum CodingKeys: String, CodingKey {
-        case router, backendPort, mtplxBinary, modelsDir, startup, models, healthTimeoutSeconds, idleEvictMinutes
+        case router, backendPort, compressionProxyURL, mtplxBinary, modelsDir, startup, models, healthTimeoutSeconds, idleEvictMinutes
     }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         router              = (try? c.decodeIfPresent(RouterConfig.self, forKey: .router)) ?? RouterConfig()
         backendPort         = (try? c.decodeIfPresent(Int.self, forKey: .backendPort)) ?? 8011
+        compressionProxyURL = (try? c.decodeIfPresent(String.self, forKey: .compressionProxyURL)) ?? ""
         mtplxBinary         = (try? c.decodeIfPresent(String.self, forKey: .mtplxBinary)) ?? expandTilde("~/.mtplx/bin/mtplx")
         modelsDir           = (try? c.decodeIfPresent(String.self, forKey: .modelsDir)) ?? expandTilde("~/.mtplx/models")
         startup             = (try? c.decodeIfPresent(StartupConfig.self, forKey: .startup)) ?? StartupConfig()

@@ -63,6 +63,16 @@ final class RouterServer {
         }
         return "Router couldn’t start: \(e.localizedDescription)"
     }
+
+    /// Where the router forwards each request: the Headroom compression proxy if
+    /// `compressionProxyURL` is set, else mtplx directly on the backend port.
+    static func backendTarget(_ cfg: AppConfig) -> (host: String, port: Int) {
+        let s = cfg.compressionProxyURL.trimmingCharacters(in: .whitespaces)
+        if !s.isEmpty, let u = URLComponents(string: s), let h = u.host {
+            return (h, u.port ?? 80)
+        }
+        return ("127.0.0.1", cfg.backendPort)
+    }
 }
 
 /// One client connection: parse the request, route it, relay the response.
@@ -206,10 +216,12 @@ private final class ClientSession {
 
     private func forward(requestBytes: Data) {
         let cfg = ConfigStore.shared.config
-        guard let port = NWEndpoint.Port(rawValue: UInt16(cfg.backendPort)) else {
+        // Forward to the Headroom compression proxy if configured, else straight to mtplx.
+        let target = RouterServer.backendTarget(cfg)
+        guard let port = NWEndpoint.Port(rawValue: UInt16(target.port)) else {
             fail(502, "bad backend port"); return
         }
-        let backend = NWConnection(host: "127.0.0.1", port: port, using: .tcp)
+        let backend = NWConnection(host: NWEndpoint.Host(target.host), port: port, using: .tcp)
         backend.stateUpdateHandler = { [weak self] st in
             guard let self = self else { return }
             switch st {

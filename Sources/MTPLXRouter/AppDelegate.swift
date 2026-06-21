@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         login.state = LoginItem.isEnabled ? .on : .off
         menu.addItem(login)
 
-        let writeOC = NSMenuItem(title: "Write OpenCode config…", action: #selector(writeOpenCode), keyEquivalent: "")
+        let writeOC = NSMenuItem(title: "Write OpenCode config (ccstack-owned)…", action: #selector(writeOpenCode), keyEquivalent: "")
         writeOC.target = self
         menu.addItem(writeOC)
 
@@ -212,14 +212,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func writeOpenCode() {
+        // opencode.json is owned by ccstack (reversible, drift-aware). Defer to it;
+        // only write from here as an explicit standalone fallback.
+        let a = NSAlert()
+        a.messageText = "OpenCode config is managed by ccstack"
+        a.informativeText = "Your opencode.json is owned by ccstack. Update it with `ccstack apply` — writing it from here will conflict with ccstack's drift detection.\n\nWrite anyway (standalone, no ccstack)?"
+        a.addButton(withTitle: "Cancel")
+        a.addButton(withTitle: "Write anyway")
+        a.alertStyle = .warning
+        NSApp.activate(ignoringOtherApps: true)
+        guard a.runModal() == .alertSecondButtonReturn else { return }
         do {
             let r = try OpenCodeConfigWriter.write()
-            var msg = "Updated \(r.path)."
-            if r.createdNew { msg = "Created \(r.path)." }
-            if let b = r.backupPath { msg += "\nBackup: \(b)" }
-            msg += r.carriedSettings ? "\nCarried over your existing per-model settings." : "\nNo prior per-model settings found to carry."
-            for w in r.warnings { msg += "\n⚠︎ \(w)" }
-            alert("OpenCode configured", msg)
+            alert("OpenCode written (standalone)", "Updated \(r.path)." + (r.backupPath.map { "\nBackup: \($0)" } ?? ""))
         } catch {
             alert("OpenCode config failed", "\(error)")
         }
