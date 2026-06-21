@@ -3,14 +3,9 @@ import AppKit
 // Headless modes (no UI) — handy for testing and scripting.
 let args = CommandLine.arguments
 if args.contains("--write-opencode") {
-    if !args.contains("--force") {
-        print("opencode.json is managed by ccstack — run `ccstack apply` instead.")
-        print("(re-run with --force to write it standalone anyway.)")
-        exit(0)
-    }
     do {
         let r = try OpenCodeConfigWriter.write()
-        print("OK  wrote \(r.path) (standalone, bypassing ccstack)")
+        print("OK  wrote \(r.path) (\(r.fromMtplx ? "canonical from mtplx" : "built-in canonical fallback"))")
         if let b = r.backupPath { print("    backup: \(b)") }
         for w in r.warnings { print("    warning: \(w)") }
         exit(0)

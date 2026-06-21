@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         login.state = LoginItem.isEnabled ? .on : .off
         menu.addItem(login)
 
-        let writeOC = NSMenuItem(title: "Write OpenCode config (ccstack-owned)…", action: #selector(writeOpenCode), keyEquivalent: "")
+        let writeOC = NSMenuItem(title: "Write OpenCode config…", action: #selector(writeOpenCode), keyEquivalent: "")
         writeOC.target = self
         menu.addItem(writeOC)
 
@@ -212,19 +212,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func writeOpenCode() {
-        // opencode.json is owned by ccstack (reversible, drift-aware). Defer to it;
-        // only write from here as an explicit standalone fallback.
+        // The router owns opencode.json — it holds the model list, so it writes its own
+        // canonical mtplx provider (reasoning mtplx-owned, output=context, x-mtplx-client)
+        // by asking `mtplx connect`. Non-destructive: backs up any existing file first.
         let a = NSAlert()
-        a.messageText = "OpenCode config is managed by ccstack"
-        a.informativeText = "Your opencode.json is owned by ccstack. Update it with `ccstack apply` — writing it from here will conflict with ccstack's drift detection.\n\nWrite anyway (standalone, no ccstack)?"
+        a.messageText = "Write OpenCode config?"
+        a.informativeText = "Writes the canonical mtplx provider + plan/build agents into ~/.config/opencode/opencode.json, pointed at this router. Your existing file is backed up first."
+        a.addButton(withTitle: "Write")
         a.addButton(withTitle: "Cancel")
-        a.addButton(withTitle: "Write anyway")
-        a.alertStyle = .warning
         NSApp.activate(ignoringOtherApps: true)
-        guard a.runModal() == .alertSecondButtonReturn else { return }
+        guard a.runModal() == .alertFirstButtonReturn else { return }
         do {
             let r = try OpenCodeConfigWriter.write()
-            alert("OpenCode written (standalone)", "Updated \(r.path)." + (r.backupPath.map { "\nBackup: \($0)" } ?? ""))
+            let src = r.fromMtplx ? "canonical (from mtplx)" : "canonical (built-in fallback — mtplx unreachable)"
+            alert("OpenCode config written", "Updated \(r.path) — \(src)." + (r.backupPath.map { "\nBackup: \($0)" } ?? ""))
         } catch {
             alert("OpenCode config failed", "\(error)")
         }
