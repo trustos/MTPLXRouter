@@ -14,6 +14,20 @@ if args.contains("--write-opencode") {
         exit(1)
     }
 }
+if args.contains("--setup-web-tools") {
+    do {
+        let cfg = ConfigStore.shared.config
+        print("setting up web tools (venv + crawl4ai + chromium; can take a few minutes)…")
+        try WebToolsManager.install(python: cfg.webTools.pythonPath)
+        ConfigStore.shared.update { $0.webTools.enabled = true }
+        let r = try OpenCodeConfigWriter.write()
+        print("OK  web tools installed; wrote \(r.path) with mcp.mtplx-web")
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("error: \(error)\n".utf8))
+        exit(1)
+    }
+}
 if args.contains("--doctor") {
     let issues = Diagnostics.run()
     if issues.isEmpty { print("No issues found.") }

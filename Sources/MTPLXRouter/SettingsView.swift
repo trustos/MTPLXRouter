@@ -117,6 +117,14 @@ struct SettingsView: View {
                 TextField("Health timeout (s)", value: $model.cfg.healthTimeoutSeconds, format: .number)
                 TextField("Idle evict (min, 0 = never)", value: $model.cfg.idleEvictMinutes, format: .number)
             }
+            Section("Web tools (private, local)") {
+                StatusDot(ok: WebToolsManager.isInstalled && model.cfg.webTools.enabled,
+                          okText: "on — web_search + web_fetch available to OpenCode",
+                          badText: WebToolsManager.isInstalled ? "installed but off" : "not installed")
+                Button(WebToolsManager.isInstalled && model.cfg.webTools.enabled ? "Manage…" : "Set up web tools…") {
+                    NotificationCenter.default.post(name: .mtplxWebToolsSetup, object: nil)
+                }
+            }
         }
         .formStyle(.grouped)
     }

@@ -115,6 +115,14 @@ enum OpenCodeConfigWriter {
         }
         root["plugin"] = plugins
 
+        // Local web tools MCP (private search + fetch), when enabled + installed.
+        // Preserves any existing mcp servers; OpenCode spawns ours on demand.
+        if cfg.webTools.enabled && WebToolsManager.isInstalled {
+            var mcp = root["mcp"] as? [String: Any] ?? [:]
+            mcp["mtplx-web"] = WebToolsManager.mcpEntry()
+            root["mcp"] = mcp
+        }
+
         let out = try JSONSerialization.data(withJSONObject: root,
                                              options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try out.write(to: url)

@@ -2,6 +2,7 @@ import Foundation
 
 extension Notification.Name {
     static let configChanged = Notification.Name("mtplx.router.configChanged")
+    static let mtplxWebToolsSetup = Notification.Name("mtplx.router.webToolsSetup")
 }
 
 struct ModelEntry: Codable, Identifiable, Hashable {
@@ -57,6 +58,26 @@ struct StartupConfig: Codable {
     }
 }
 
+/// Local web tools (private search + fetch) exposed to OpenCode as a stdio MCP
+/// the agent spawns on demand. See WebToolsManager.
+struct WebToolsConfig: Codable {
+    var enabled: Bool = false
+    /// Python used to build the web-tools venv. Defaults to Homebrew python@3.13
+    /// (crawl4ai/Playwright don't support the 3.14 that's the system default).
+    var pythonPath: String = "/opt/homebrew/opt/python@3.13/bin/python3.13"
+    var maxResults: Int = 5
+
+    init() {}
+    enum CodingKeys: String, CodingKey { case enabled, pythonPath, maxResults }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        enabled    = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? false
+        pythonPath = (try? c.decodeIfPresent(String.self, forKey: .pythonPath))
+            ?? "/opt/homebrew/opt/python@3.13/bin/python3.13"
+        maxResults = (try? c.decodeIfPresent(Int.self, forKey: .maxResults)) ?? 5
+    }
+}
+
 struct AppConfig: Codable {
     var router: RouterConfig = RouterConfig()
     var backendPort: Int = 8011                 // single reused backend port (strict swap)
@@ -67,10 +88,11 @@ struct AppConfig: Codable {
     var models: [ModelEntry] = AppConfig.defaultModels
     var healthTimeoutSeconds: Int = 180         // max wait for a daemon to become healthy
     var idleEvictMinutes: Int = 0               // 0 = never evict on idle
+    var webTools: WebToolsConfig = WebToolsConfig()   // local search/fetch MCP for OpenCode
 
     init() {}
     enum CodingKeys: String, CodingKey {
-        case router, backendPort, compressionProxyURL, mtplxBinary, modelsDir, startup, models, healthTimeoutSeconds, idleEvictMinutes
+        case router, backendPort, compressionProxyURL, mtplxBinary, modelsDir, startup, models, healthTimeoutSeconds, idleEvictMinutes, webTools
     }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -85,6 +107,7 @@ struct AppConfig: Codable {
         models              = (try? c.decodeIfPresent([ModelEntry].self, forKey: .models)) ?? AppConfig.defaultModels
         healthTimeoutSeconds = (try? c.decodeIfPresent(Int.self, forKey: .healthTimeoutSeconds)) ?? 180
         idleEvictMinutes     = (try? c.decodeIfPresent(Int.self, forKey: .idleEvictMinutes)) ?? 0
+        webTools             = (try? c.decodeIfPresent(WebToolsConfig.self, forKey: .webTools)) ?? WebToolsConfig()
     }
 
     static var defaultModels: [ModelEntry] {

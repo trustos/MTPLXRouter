@@ -41,6 +41,21 @@ Menu → **Write OpenCode config** (or the Settings button) adds an `mtplx` prov
 pointing at the router and wires `plan`→planner, `build`→builder. It **backs up**
 your `~/.config/opencode/opencode.json` first and preserves your prompts/temperature.
 
+## Web tools (private, local)
+Menu → **Set up web tools…** (or `MTPLX Router --setup-web-tools`) installs a small private
+Python venv and exposes two tools to OpenCode as a local **MCP it spawns on demand** — no
+Docker, no resident daemon, nothing through a third-party service:
+
+- `web_search` — DuckDuckGo via [`ddgs`](https://pypi.org/project/ddgs/) (no API key)
+- `web_fetch` — [Crawl4AI](https://github.com/unclecode/crawl4ai) (headless Chromium → clean
+  markdown), which gets past the bot-blocking (Medium/Cloudflare 403s, Google CAPTCHA) that
+  defeats OpenCode's built-in WebFetch.
+
+The venv + `server.py` live under `…/MTPLX Router/web-tools/`; the router writes an
+`mcp.mtplx-web` entry into `opencode.json` (non-destructive). **Restart OpenCode** after
+enabling. First install downloads Chromium (a few minutes). Search is DuckDuckGo; a local
+SearXNG (multi-engine) is a possible future upgrade.
+
 ## Config
 `~/Library/Application Support/MTPLX Router/config.json`
 
@@ -54,6 +69,7 @@ your `~/.config/opencode/opencode.json` first and preserves your prompts/tempera
 | `startup.*` | router on, no preload | `launchAtLogin`, `startRouterOnLaunch`, `preloadModelId` |
 | `healthTimeoutSeconds` | 180 | max wait for a daemon to come up |
 | `idleEvictMinutes` | 0 | 0 = never auto-unload |
+| `webTools.*` | off | local `web_search`/`web_fetch` MCP for OpenCode (`enabled`, `pythonPath`, `maxResults`) |
 
 ## Launch at login
 Menu → **Launch at login** (uses `SMAppService`). For this to stick, keep the app at a

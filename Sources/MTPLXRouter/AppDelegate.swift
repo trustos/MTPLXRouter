@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.tick() }
         installSignalHandlers()
+        NotificationCenter.default.addObserver(forName: .mtplxWebToolsSetup, object: nil, queue: .main) { [weak self] _ in
+            self?.setupWebTools()
+        }
         updateButton()
 
         // Surface blocking configuration problems right away so the user can act.
@@ -163,6 +166,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         writeOC.target = self
         menu.addItem(writeOC)
 
+        let wtOn = ConfigStore.shared.config.webTools.enabled && WebToolsManager.isInstalled
+        let webTools = NSMenuItem(title: wtOn ? "Web tools: on ✓" : "Set up web tools…",
+                                  action: #selector(setupWebTools), keyEquivalent: "")
+        webTools.target = self
+        menu.addItem(webTools)
+
         let freePort = NSMenuItem(title: "Free backend port (\(cfg.backendPort))", action: #selector(freeBackendPort), keyEquivalent: "")
         freePort.target = self
         menu.addItem(freePort)
@@ -228,6 +237,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert("OpenCode config written", "Updated \(r.path) — \(src)." + (r.backupPath.map { "\nBackup: \($0)" } ?? ""))
         } catch {
             alert("OpenCode config failed", "\(error)")
+        }
+    }
+
+    @objc private func setupWebTools() {
+        let installed = WebToolsManager.isInstalled
+        let enabled = ConfigStore.shared.config.webTools.enabled
+        if installed && enabled {
+            let a = NSAlert()
+            a.messageText = "Web tools are on"
+            a.informativeText = "Private web_search + web_fetch (local MCP) are enabled for OpenCode.\n\nDisable them? (The venv is kept; delete the web-tools folder to remove it fully.)"
+            a.addButton(withTitle: "Keep enabled")
+            a.addButton(withTitle: "Disable")
+            NSApp.activate(ignoringOtherApps: true)
+            guard a.runModal() == .alertSecondButtonReturn else { return }
+            ConfigStore.shared.update { $0.webTools.enabled = false }
+            do {
+                let r = try OpenCodeConfigWriter.write()
+                alert("Web tools disabled", "Removed from \(r.path). Restart OpenCode to apply.")
+            } catch { alert("Couldn’t update OpenCode config", "\(error)") }
+            return
+        }
+        let a = NSAlert()
+        a.messageText = "Set up local web tools?"
+        a.informativeText = "Installs a small private Python venv (Crawl4AI + DuckDuckGo) and exposes web_search/web_fetch to OpenCode as a local MCP it spawns on demand. The first install downloads Chromium (a few minutes). Nothing leaves your machine except the page/search traffic itself."
+        a.addButton(withTitle: "Install")
+        a.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        let py = ConfigStore.shared.config.webTools.pythonPath
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try WebToolsManager.install(python: py)
+                DispatchQueue.main.async {
+                    ConfigStore.shared.update { $0.webTools.enabled = true }
+                    do {
+                        let r = try OpenCodeConfigWriter.write()
+                        self.alert("Web tools ready", "Installed + wrote \(r.path).\nRestart OpenCode to pick up web_search / web_fetch.")
+                    } catch { self.alert("Couldn’t update OpenCode config", "\(error)") }
+                }
+            } catch {
+                DispatchQueue.main.async { self.alert("Web tools setup failed", "\(error)") }
+            }
         }
     }
 
