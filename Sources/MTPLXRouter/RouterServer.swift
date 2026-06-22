@@ -12,8 +12,19 @@ final class RouterServer {
     private(set) var lastError: String?
     var onStateChange: ((Bool, String?) -> Void)?
 
+    private var bindAttempt = 0
+
     func start() throws {
         stop()
+        bindAttempt = 0
+        try bindListener()
+    }
+
+    /// Bind the listener. On a quick restart (e.g. Save), the just-cancelled previous
+    /// listener may not have released the port yet — `NWListener.cancel()` is async — so
+    /// the bind hits a transient `EADDRINUSE`. Retry briefly before treating it as a real
+    /// external conflict.
+    private func bindListener() throws {
         let cfg = ConfigStore.shared.config
         guard let port = NWEndpoint.Port(rawValue: UInt16(cfg.router.port)) else {
             throw RouterError.badRequest("invalid router port")
@@ -29,26 +40,39 @@ final class RouterServer {
             ClientSession(conn: conn).begin()
         }
         l.stateUpdateHandler = { [weak self] st in
+            guard let self = self else { return }
             switch st {
             case .ready:
-                self?.isRunning = true
-                self?.lastError = nil
+                self.bindAttempt = 0
+                self.isRunning = true
+                self.lastError = nil
                 LogStore.shared.log("router listening on \(routerHost):\(routerPort)")
-                self?.onStateChange?(true, nil)
+                self.onStateChange?(true, nil)
             case .failed(let e):
-                self?.isRunning = false
+                if case let .posix(code) = e, code == .EADDRINUSE, self.bindAttempt < 12 {
+                    self.bindAttempt += 1
+                    let old = self.listener
+                    self.listener = nil
+                    old?.stateUpdateHandler = nil
+                    old?.cancel()
+                    self.queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                        try? self?.bindListener()
+                    }
+                    return
+                }
+                self.isRunning = false
                 let msg = RouterServer.friendly(e, port: routerPort)
-                self?.lastError = msg
+                self.lastError = msg
                 LogStore.shared.log("router listener failed: \(e)")
-                self?.onStateChange?(false, msg)
+                self.onStateChange?(false, msg)
             case .cancelled:
-                self?.isRunning = false
-                self?.onStateChange?(false, self?.lastError)
+                self.isRunning = false
+                self.onStateChange?(false, self.lastError)
             default: break
             }
         }
-        l.start(queue: queue)
         listener = l
+        l.start(queue: queue)
     }
 
     func stop() {
