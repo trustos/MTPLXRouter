@@ -45,7 +45,10 @@ enum OpenCodeConfigWriter {
             if let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
                 root = obj
             } else {
-                warnings.append("existing opencode.json was not valid JSON — wrote a fresh config; the old file is backed up.")
+                // Surgical: do NOT nuke a config we can't parse — it may be a transient
+                // half-written read (OpenCode or another writer mid-flight). Aborting
+                // preserves the user's file (incl. their mcp servers); the backup is saved.
+                throw RouterError.badRequest("existing opencode.json isn't valid JSON — not overwriting it (backed up at \(bak.path)). Retry in a moment, or fix/remove the file.")
             }
         } else {
             createdNew = true
