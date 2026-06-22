@@ -24,6 +24,7 @@ final class DaemonManager {
     private var process: Process?
     private var ownsProcess = false
     private(set) var currentModelId: String?
+    private var currentTemplateFix = false   // whether the live daemon was launched with the Qwen3.6 template fix
     private(set) var lastActivity = Date()
     private(set) var state: DaemonState = .stopped {
         didSet { onStateChange?(state) }
@@ -49,12 +50,14 @@ final class DaemonManager {
     /// Ensure a healthy daemon serving `modelId`. Blocks until ready; throws on failure.
     func ensure(modelId: String) throws {
         lock.lock(); defer { lock.unlock() }
-        if currentModelId == modelId, isHealthy() {
-            if case .ready = state {} else { state = .ready(modelId) }
-            return
-        }
         guard let entry = cfg.models.first(where: { $0.id == modelId }) else {
             throw RouterError.unknownModel(modelId)
+        }
+        // A change to the template-fix toggle must force a reload (the flag is a launch arg).
+        let wantFix = wantsTemplateFix(entry)
+        if currentModelId == modelId, currentTemplateFix == wantFix, isHealthy() {
+            if case .ready = state {} else { state = .ready(modelId) }
+            return
         }
         guard FileManager.default.isExecutableFile(atPath: cfg.mtplxBinary) else {
             state = .failed("mtplx not found"); throw RouterError.mtplxMissing(cfg.mtplxBinary)
@@ -70,10 +73,11 @@ final class DaemonManager {
         }
         stopLocked(port: cfg.backendPort)
         state = .starting(modelId)
-        LogStore.shared.log("swap → loading \(modelId)")
+        LogStore.shared.log("swap → loading \(modelId)\(wantFix ? " [qwen3.6 template fix]" : "")")
         try launch(entry: entry)
         try waitHealthy(timeout: TimeInterval(cfg.healthTimeoutSeconds))
         currentModelId = modelId
+        currentTemplateFix = wantFix
         lastActivity = Date()
         state = .ready(modelId)
         LogStore.shared.log("ready · \(modelId) (\(currentRSS().map(humanBytes) ?? "?"))")
@@ -124,11 +128,23 @@ final class DaemonManager {
 
     // MARK: - internals
 
+    /// Whether to launch this model with the guard-free Qwen3.6 chat template — only for the
+    /// qwen3_5 family, and only when the per-model toggle is on.
+    private func wantsTemplateFix(_ entry: ModelEntry) -> Bool {
+        entry.templateFix && QwenTemplateFix.isQwen35(modelPath: entry.path)
+    }
+
     private func launch(entry: ModelEntry) throws {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: cfg.mtplxBinary)
-        p.arguments = ["quickstart", "--model", entry.path, "--host", "127.0.0.1",
-                       "--port", String(cfg.backendPort), "--model-id", entry.id, "--yes"]
+        var args = ["quickstart", "--model", entry.path, "--host", "127.0.0.1",
+                    "--port", String(cfg.backendPort), "--model-id", entry.id, "--yes"]
+        if wantsTemplateFix(entry) {
+            QwenTemplateFix.ensureInstalled()
+            args += ["--chat-template-path", QwenTemplateFix.templatePath]
+            LogStore.shared.log("qwen3.6 template fix → \(QwenTemplateFix.templatePath)")
+        }
+        p.arguments = args
         if let fh = try? FileHandle(forWritingTo: LogStore.shared.daemonLogURL) {
             fh.seekToEndOfFile()
             let banner = "\n===== \(LogStore.ts())  quickstart \(entry.id) =====\n"

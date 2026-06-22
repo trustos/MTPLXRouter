@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var routerErrorShown = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        QwenTemplateFix.ensureInstalled()   // make the hardened Qwen3.6 template available on disk
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let btn = statusItem.button {
             btn.image = NSImage(systemSymbolName: "bolt.horizontal.circle", accessibilityDescription: "MTPLX Router")

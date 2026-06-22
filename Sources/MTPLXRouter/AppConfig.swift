@@ -15,13 +15,17 @@ struct ModelEntry: Codable, Identifiable, Hashable {
     var displayName: String // shown in menus
     var path: String        // absolute model directory
     var enabled: Bool
+    /// Launch mtplx with the guard-free Qwen3.6 chat template (`--chat-template-path`).
+    /// Only meaningful for the qwen3_5 family; see QwenTemplateFix. Off by default (opt-in).
+    var templateFix: Bool
 
-    init(id: String, alias: String, displayName: String, path: String, enabled: Bool = true) {
+    init(id: String, alias: String, displayName: String, path: String, enabled: Bool = true,
+         templateFix: Bool = false) {
         self.id = id; self.alias = alias; self.displayName = displayName
-        self.path = path; self.enabled = enabled
+        self.path = path; self.enabled = enabled; self.templateFix = templateFix
     }
 
-    enum CodingKeys: String, CodingKey { case id, alias, displayName, path, enabled }
+    enum CodingKeys: String, CodingKey { case id, alias, displayName, path, enabled, templateFix }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         id          = try c.decode(String.self, forKey: .id)
@@ -29,6 +33,7 @@ struct ModelEntry: Codable, Identifiable, Hashable {
         displayName = (try? c.decodeIfPresent(String.self, forKey: .displayName)) ?? id
         path        = try c.decode(String.self, forKey: .path)
         enabled     = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+        templateFix = (try? c.decodeIfPresent(Bool.self, forKey: .templateFix)) ?? false
     }
 }
 

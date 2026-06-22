@@ -135,20 +135,35 @@ struct SettingsView: View {
     private var modelsTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach($model.cfg.models) { $m in
+                // Index identity, NOT $model.cfg.models: ModelEntry.id is user-editable, so
+                // Identifiable's default (id-based) ForEach identity changes on every keystroke
+                // in the id field and SwiftUI rebuilds the row — dropping keyboard focus. The
+                // index is stable while editing fields.
+                ForEach(model.cfg.models.indices, id: \.self) { i in
                     GroupBox {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Toggle("", isOn: $m.enabled).labelsHidden()
-                                TextField("Display name", text: $m.displayName)
+                                Toggle("", isOn: $model.cfg.models[i].enabled).labelsHidden()
+                                TextField("Display name", text: $model.cfg.models[i].displayName)
                             }
                             HStack {
-                                TextField("model id", text: $m.id)
-                                TextField("alias", text: $m.alias).frame(width: 110)
+                                TextField("model id", text: $model.cfg.models[i].id)
+                                TextField("alias", text: $model.cfg.models[i].alias).frame(width: 110)
                             }
-                            TextField("path", text: $m.path)
-                                .font(.system(size: 11, design: .monospaced))
-                            StatusDot(ok: fileExists(m.path), okText: "folder exists", badText: "folder not found")
+                            HStack {
+                                TextField("path", text: $model.cfg.models[i].path)
+                                    .font(.system(size: 11, design: .monospaced))
+                                Button("Choose…") { chooseModelFolder(i) }
+                            }
+                            StatusDot(ok: fileExists(model.cfg.models[i].path), okText: "folder exists", badText: "folder not found")
+                            if QwenTemplateFix.isQwen35(modelPath: model.cfg.models[i].path) {
+                                Divider()
+                                Toggle("Apply Qwen3.6 tool-call template fix", isOn: $model.cfg.models[i].templateFix)
+                                    .font(.caption)
+                                Text("Detected qwen3_5 family. Prevents the stock template’s “No user query found” 500 in long / compacted sessions (verified safe; tool-calling unaffected). Applies on next model load.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .padding(4)
                     }
@@ -165,6 +180,22 @@ struct SettingsView: View {
                 .padding(.top, 4)
             }
             .padding(12)
+        }
+    }
+
+    /// Finder folder picker for model `i`'s directory (the folder that holds config.json).
+    private func chooseModelFolder(_ i: Int) {
+        guard model.cfg.models.indices.contains(i) else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Select"
+        panel.message = "Select the model folder (the directory that contains config.json)"
+        let current = model.cfg.models[i].path
+        panel.directoryURL = URL(fileURLWithPath: current.isEmpty ? expandTilde("~/.mtplx/models") : current)
+        if panel.runModal() == .OK, let url = panel.url {
+            model.cfg.models[i].path = url.path
         }
     }
 

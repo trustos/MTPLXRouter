@@ -28,6 +28,13 @@ if args.contains("--setup-web-tools") {
         exit(1)
     }
 }
+if args.contains("--install-template-fix") {
+    QwenTemplateFix.ensureInstalled()
+    let p = QwenTemplateFix.templatePath
+    let ok = FileManager.default.fileExists(atPath: p)
+    print(ok ? "OK  \(p)" : "FAILED to install template at \(p)")
+    exit(ok ? 0 : 1)
+}
 if args.contains("--doctor") {
     let issues = Diagnostics.run()
     if issues.isEmpty { print("No issues found.") }
