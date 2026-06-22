@@ -114,6 +114,9 @@ struct SettingsView: View {
                           okText: "mtplx found",
                           badText: fileExists(model.cfg.mtplxBinary) ? "not executable" : "not found — install MTPLX or fix the path")
                 TextField("Backend port", value: $model.cfg.backendPort, format: .number)
+                Text("Where mtplx serves the model and the router forwards. Changing it restarts the daemon on the new port. If the Headroom hop is on, set ccstack’s headroom_upstream to match.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 TextField("Health timeout (s)", value: $model.cfg.healthTimeoutSeconds, format: .number)
                 TextField("Idle evict (min, 0 = never)", value: $model.cfg.idleEvictMinutes, format: .number)
             }

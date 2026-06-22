@@ -3,6 +3,10 @@ import Foundation
 extension Notification.Name {
     static let configChanged = Notification.Name("mtplx.router.configChanged")
     static let mtplxWebToolsSetup = Notification.Name("mtplx.router.webToolsSetup")
+    /// The backend (mtplx) port changed. userInfo["old"] = previous port, so the
+    /// daemon can be torn down on the OLD port before it's adopted (the live config
+    /// already holds the new one). Fired by both Save and the external hot-reload.
+    static let backendPortChanged = Notification.Name("mtplx.router.backendPortChanged")
 }
 
 struct ModelEntry: Codable, Identifiable, Hashable {
@@ -146,10 +150,15 @@ final class ConfigStore {
     }
 
     func save(_ cfg: AppConfig) {
+        let oldBackendPort = config.backendPort
         config = cfg
         ConfigStore.persist(cfg, to: url)
         lastMtime = fileMtime() ?? lastMtime
         NotificationCenter.default.post(name: .configChanged, object: nil)
+        if oldBackendPort != cfg.backendPort {
+            NotificationCenter.default.post(name: .backendPortChanged, object: nil,
+                                            userInfo: ["old": oldBackendPort])
+        }
     }
 
     private func fileMtime() -> Date? {
@@ -175,9 +184,14 @@ final class ConfigStore {
             && fresh.webTools.enabled == config.webTools.enabled
         if same { return false }
         let endpointChanged = fresh.router.host != config.router.host || fresh.router.port != config.router.port
+        let oldBackendPort = config.backendPort
         config = fresh
         LogStore.shared.log("config.json changed on disk — reloaded (endpoint changed: \(endpointChanged))")
         NotificationCenter.default.post(name: .configChanged, object: nil)
+        if oldBackendPort != fresh.backendPort {
+            NotificationCenter.default.post(name: .backendPortChanged, object: nil,
+                                            userInfo: ["old": oldBackendPort])
+        }
         return endpointChanged
     }
 

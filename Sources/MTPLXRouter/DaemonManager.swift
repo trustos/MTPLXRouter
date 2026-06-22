@@ -68,7 +68,7 @@ final class DaemonManager {
             state = .failed("backend port \(cfg.backendPort) busy")
             throw RouterError.backendPortBusy(cfg.backendPort, pid)
         }
-        stopLocked()
+        stopLocked(port: cfg.backendPort)
         state = .starting(modelId)
         LogStore.shared.log("swap → loading \(modelId)")
         try launch(entry: entry)
@@ -81,8 +81,32 @@ final class DaemonManager {
 
     func stop() {
         lock.lock(); defer { lock.unlock() }
-        stopLocked()
+        stopLocked(port: cfg.backendPort)
         state = .stopped
+    }
+
+    /// The backend port changed in config (Settings Save or an external `ccstack` edit).
+    /// The live `cfg` already holds the NEW port, so an ordinary swap would tear down the
+    /// new (empty) port and orphan the daemon still running on `oldPort` — especially since
+    /// `quickstart` daemonizes, so we no longer own its child handle. Stop the OLD port
+    /// explicitly here, then transparently re-warm whatever was loaded on the new port.
+    func backendPortChanged(oldPort: Int) {
+        lock.lock()
+        let newPort = cfg.backendPort
+        guard oldPort != newPort else { lock.unlock(); return }
+        let reloadId = currentModelId
+        let wasReady: Bool = { if case .ready = state { return true } else { return false } }()
+        LogStore.shared.log("backend port \(oldPort) → \(newPort): stopping daemon on :\(oldPort)")
+        stopLocked(port: oldPort)
+        state = .stopped
+        lock.unlock()
+        // Re-warm outside the lock — ensure() takes the lock itself. If the new port is
+        // foreign-held, ensure() throws backendPortBusy and Diagnostics surfaces it.
+        if wasReady, let id = reloadId {
+            DispatchQueue.global(qos: .userInitiated).async {
+                try? DaemonManager.shared.ensure(modelId: id)
+            }
+        }
     }
 
     /// Force-stop whatever holds the backend port (recovery for orphans / foreign holders).
@@ -150,8 +174,7 @@ final class DaemonManager {
         return ok
     }
 
-    private func stopLocked() {
-        let port = cfg.backendPort
+    private func stopLocked(port: Int) {
         let listening = pidListening(onPort: port)
         if process != nil || currentModelId != nil || listening != nil {
             LogStore.shared.log("stopping daemon on :\(port)")

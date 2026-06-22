@@ -46,6 +46,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NotificationCenter.default.addObserver(forName: .mtplxWebToolsSetup, object: nil, queue: .main) { [weak self] _ in
             self?.setupWebTools()
         }
+        // Backend port changed (Settings Save or external `ccstack` edit): tear down the
+        // daemon on the OLD port off the main thread, then re-warm on the new one.
+        NotificationCenter.default.addObserver(forName: .backendPortChanged, object: nil, queue: .main) { note in
+            guard let old = note.userInfo?["old"] as? Int else { return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                DaemonManager.shared.backendPortChanged(oldPort: old)
+            }
+        }
         updateButton()
 
         // Surface blocking configuration problems right away so the user can act.

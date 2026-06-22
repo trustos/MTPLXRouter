@@ -21,6 +21,16 @@ enum Diagnostics {
     static func configIssues(_ cfg: AppConfig) -> [Issue] {
         var issues: [Issue] = []
 
+        // ports — the router front-door and the mtplx backend must be valid and distinct
+        if cfg.backendPort < 1 || cfg.backendPort > 65535 {
+            issues.append(.error("Invalid backend port",
+                "Backend port \(cfg.backendPort) is out of range (1–65535). Set it in Settings ▸ Router."))
+        }
+        if cfg.backendPort == cfg.router.port {
+            issues.append(.error("Port conflict",
+                "The router endpoint and the backend port are both \(cfg.backendPort). They must differ — the router listens on one and forwards mtplx on the other. Change one in Settings ▸ Router."))
+        }
+
         // mtplx CLI
         let bin = cfg.mtplxBinary
         if !FileManager.default.fileExists(atPath: bin) {
