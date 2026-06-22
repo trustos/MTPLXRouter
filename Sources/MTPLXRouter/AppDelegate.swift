@@ -62,6 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func tick() {
+        // Pick up external edits to config.json (e.g. `ccstack apply` writing
+        // compressionProxyURL) with no manual restart. forward() reads config fresh per
+        // request, so most changes are live immediately; only a host/port change re-binds.
+        if ConfigStore.shared.reloadIfChangedExternally(), RouterServer.shared.isRunning {
+            startRouter()
+        }
         let dm = DaemonManager.shared
         let cfg = ConfigStore.shared.config
         if cfg.idleEvictMinutes > 0, dm.loadedModelId != nil,

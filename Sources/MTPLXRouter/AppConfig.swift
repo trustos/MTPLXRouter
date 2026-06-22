@@ -126,6 +126,7 @@ final class ConfigStore {
     static let shared = ConfigStore()
     private(set) var config: AppConfig
     let url: URL
+    private var lastMtime: Date = .distantPast
 
     private init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -141,12 +142,43 @@ final class ConfigStore {
             config = AppConfig()
             ConfigStore.persist(config, to: url)
         }
+        lastMtime = fileMtime() ?? .distantPast
     }
 
     func save(_ cfg: AppConfig) {
         config = cfg
         ConfigStore.persist(cfg, to: url)
+        lastMtime = fileMtime() ?? lastMtime
         NotificationCenter.default.post(name: .configChanged, object: nil)
+    }
+
+    private func fileMtime() -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    /// Re-read config.json if it changed on disk since we last loaded/saved it (e.g. `ccstack`
+    /// writing `compressionProxyURL`). Stat-by-path so it survives atomic temp+rename replaces.
+    /// `forward()` reads the config fresh per request, so a reloaded compressionProxyURL/backend
+    /// takes effect with no restart; returns true only if the router ENDPOINT (host/port) changed
+    /// and the listener needs re-binding.
+    @discardableResult
+    func reloadIfChangedExternally() -> Bool {
+        guard let m = fileMtime(), m > lastMtime else { return false }
+        lastMtime = m
+        guard let data = try? Data(contentsOf: url),
+              let fresh = try? JSONDecoder().decode(AppConfig.self, from: data) else { return false }
+        let same = fresh.compressionProxyURL == config.compressionProxyURL
+            && fresh.router.host == config.router.host
+            && fresh.router.port == config.router.port
+            && fresh.backendPort == config.backendPort
+            && fresh.mtplxBinary == config.mtplxBinary
+            && fresh.webTools.enabled == config.webTools.enabled
+        if same { return false }
+        let endpointChanged = fresh.router.host != config.router.host || fresh.router.port != config.router.port
+        config = fresh
+        LogStore.shared.log("config.json changed on disk — reloaded (endpoint changed: \(endpointChanged))")
+        NotificationCenter.default.post(name: .configChanged, object: nil)
+        return endpointChanged
     }
 
     func update(_ mutate: (inout AppConfig) -> Void) {
