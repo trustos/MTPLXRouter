@@ -46,15 +46,16 @@ Menu → **Set up web tools…** (or `MTPLX Router --setup-web-tools`) installs 
 Python venv and exposes two tools to OpenCode as a local **MCP it spawns on demand** — no
 Docker, no resident daemon, nothing through a third-party service:
 
-- `web_search` — DuckDuckGo via [`ddgs`](https://pypi.org/project/ddgs/) (no API key)
+- `web_search` — multi-engine metasearch (Google/Bing/Brave/DuckDuckGo/Mojeek/…) via [`ddgs`](https://pypi.org/project/ddgs/) (`backend=auto`, no API key)
 - `web_fetch` — [Crawl4AI](https://github.com/unclecode/crawl4ai) (headless Chromium → clean
   markdown), which gets past the bot-blocking (Medium/Cloudflare 403s, Google CAPTCHA) that
   defeats OpenCode's built-in WebFetch.
 
 The venv + `server.py` live under `…/MTPLX Router/web-tools/`; the router writes an
 `mcp.mtplx-web` entry into `opencode.json` (non-destructive). **Restart OpenCode** after
-enabling. First install downloads Chromium (a few minutes). Search is DuckDuckGo; a local
-SearXNG (multi-engine) is a possible future upgrade.
+enabling. First install downloads Chromium (a few minutes). Search is **multi-engine**
+metasearch (`ddgs`, `backend=auto`); a standalone SearXNG instance remains an option if you
+want its own browser UI / engine config.
 
 ## Config
 `~/Library/Application Support/MTPLX Router/config.json`

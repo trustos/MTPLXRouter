@@ -105,7 +105,7 @@ enum WebToolsManager {
     static let SERVER_PY = #"""
 #!/usr/bin/env python3
 """MTPLX Router local web tools — a stdio MCP exposing private, self-hosted
-web_search (DuckDuckGo via ddgs) and web_fetch (Crawl4AI headless browser).
+web_search (multi-engine metasearch via ddgs) and web_fetch (Crawl4AI headless browser).
 
 OpenCode spawns this on demand. Nothing here goes through a third-party service —
 only your machine talks to the target sites/engines. Heavy imports are lazy so
@@ -120,7 +120,8 @@ mcp = FastMCP("mtplx-web")
 
 @mcp.tool()
 def web_search(query: str, max_results: int = 5) -> list[dict]:
-    """Private web search via DuckDuckGo (no API key, no third-party service).
+    """Private metasearch across multiple engines (Google, Bing, Brave, DuckDuckGo,
+    Mojeek, …) via ddgs — no API key, no third-party service.
 
     Returns a list of {title, url, snippet}.
     """
@@ -128,7 +129,7 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
 
     results: list[dict] = []
     with DDGS() as ddgs:
-        for r in ddgs.text(query, max_results=max_results):
+        for r in ddgs.text(query, max_results=max_results, backend="auto"):
             results.append(
                 {
                     "title": r.get("title"),
